@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/v2v-blockchain/v2v-blockchain/internal/config"
+	"github.com/v2v-blockchain/v2v-blockchain/internal/app/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"

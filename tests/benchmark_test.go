@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/v2v-blockchain/v2v-blockchain/internal/blockchain"
+	"github.com/v2v-blockchain/v2v-blockchain/internal/core/blockchain"
 )
 
 // BenchmarkBlockHash benchmarks block header hash calculation (Task 13.9)

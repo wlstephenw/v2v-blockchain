@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/v2v-blockchain/v2v-blockchain/internal/blockchain"
-	"github.com/v2v-blockchain/v2v-blockchain/internal/platoon"
+	"github.com/v2v-blockchain/v2v-blockchain/internal/core/blockchain"
+	"github.com/v2v-blockchain/v2v-blockchain/internal/service/platoon"
 )
 
 // TestBlockchainBasic tests basic blockchain operations (Task 10.10)
