@@ -1,0 +1,71 @@
+# V2V Blockchain Configuration
+
+# Node Configuration
+node:
+  id: ""                    # Node ID (auto-generated if empty)
+  role: "follower"          # Node role: leader, validator, follower
+  data_dir: "./data"        # Data directory
+  listen_addr: "/ip4/0.0.0.0/tcp/10001"  # P2P listen address
+
+# Network Configuration
+network:
+  bootstrap_peers: []       # Bootstrap peer addresses
+  max_connections: 12       # Maximum P2P connections
+  min_connections: 8        # Minimum P2P connections
+  dht_enabled: true         # Enable DHT for peer discovery
+  mdns_enabled: true        # Enable mDNS for local discovery
+
+# Blockchain Configuration
+blockchain:
+  genesis_block: true       # Create genesis block if not exists
+  block_interval: 1000      # Block interval in milliseconds
+  max_tx_per_block: 100     # Maximum transactions per block
+  max_block_size: 1048576   # Maximum block size in bytes (1MB)
+  light_client: false       # Run as light client (only sync headers)
+
+# Consensus Configuration
+consensus:
+  type: "pbft"              # Consensus type: pbft
+  view_timeout: 10000       # View change timeout in milliseconds
+  block_timeout: 5000       # Block proposal timeout in milliseconds
+  min_validators: 4         # Minimum validators required
+
+# API Configuration
+api:
+  enabled: true
+  http_host: "0.0.0.0"
+  http_port: 8080
+  websocket_enabled: true
+  cors_origins: ["*"]
+  rate_limit: 1000          # Requests per minute
+
+# Logging Configuration
+log:
+  level: "info"             # Log level: debug, info, warn, error
+  format: "json"            # Log format: json, console
+  output: "stdout"          # Log output: stdout, file
+  file: ""                  # Log file path (if output is file)
+  max_size: 100             # Max log file size in MB
+  max_backups: 10           # Max log file backups
+  max_age: 30               # Max log file age in days
+
+# Certificate Configuration
+certificate:
+  cert_file: "./certs/node.crt"
+  key_file: "./certs/node.key"
+  ca_file: "./certs/ca.crt"
+  auto_rotate: true
+  rotate_days_before: 7
+
+# Storage Configuration
+storage:
+  type: "leveldb"
+  path: "./data/chaindb"
+  cache_size: 64            # Cache size in MB
+  compression: true
+
+# Metrics Configuration
+metrics:
+  enabled: true
+  prometheus_port: 9090
+  namespace: "v2v_blockchain"

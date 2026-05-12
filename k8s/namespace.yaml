@@ -1,0 +1,7 @@
+# Task 13.3: Kubernetes deployment configuration
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: v2v-blockchain
+  labels:
+    name: v2v-blockchain

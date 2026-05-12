@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: v2v-validator
+  namespace: v2v-blockchain
+  labels:
+    app: v2v-validator
+spec:
+  serviceName: v2v-validator
+  replicas: 4
+  selector:
+    matchLabels:
+      app: v2v-validator
+  template:
+    metadata:
+      labels:
+        app: v2v-validator
+    spec:
+      containers:
+        - name: v2v-node
+          image: v2v-blockchain:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: api
+            - containerPort: 10000
+              name: p2p
+          env:
+            - name: V2V_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: V2V_VALIDATOR
+              value: "true"
+            - name: V2V_DATA_DIR
+              value: "/data"
+          envFrom:
+            - configMapRef:
+                name: v2v-config
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: v2v-validator
+  namespace: v2v-blockchain
+  labels:
+    app: v2v-validator
+spec:
+  selector:
+    app: v2v-validator
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: api
+    - port: 10000
+      targetPort: 10000
+      name: p2p
+  clusterIP: None
