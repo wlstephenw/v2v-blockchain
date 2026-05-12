@@ -60,6 +60,9 @@ type Server struct {
 	// Transaction builder
 	txBuilder *executor.TransactionBuilder
 	
+	// Middleware
+	rateLimiter *RateLimiter
+	
 	// WebSocket
 	upgrader  websocket.Upgrader
 	clients   map[*websocket.Conn]bool
@@ -99,9 +102,10 @@ func NewServer(
 				return true // Allow all origins for development
 			},
 		},
-		clients:   make(map[*websocket.Conn]bool),
-		broadcast: make(chan interface{}, 100),
-		stopCh:    make(chan struct{}),
+		rateLimiter: NewRateLimiter(1000), // 每分钟1000请求
+		clients:     make(map[*websocket.Conn]bool),
+		broadcast:   make(chan interface{}, 100),
+		stopCh:      make(chan struct{}),
 	}
 
 	s.setupRoutes()
@@ -112,59 +116,74 @@ func NewServer(
 
 // setupRoutes configures API routes
 func (s *Server) setupRoutes() {
-	// Health check
+	// Health check - 公开 API，不需要认证
 	s.router.HandleFunc("/health", s.handleHealth).Methods("GET")
 	s.router.HandleFunc("/ready", s.handleReady).Methods("GET")
 
-	// Block APIs (Task 9.6)
-	s.router.HandleFunc("/api/v1/blocks/latest", s.handleGetLatestBlock).Methods("GET")
-	s.router.HandleFunc("/api/v1/blocks/{height}", s.handleGetBlockByHeight).Methods("GET")
-	s.router.HandleFunc("/api/v1/blocks/hash/{hash}", s.handleGetBlockByHash).Methods("GET")
-	s.router.HandleFunc("/api/v1/blocks", s.handleGetBlocks).Methods("GET")
+	// 公开 API 路由（不需要认证）
+	public := s.router.PathPrefix("/api/v1").Subrouter()
+	public.Use(s.optionalAuthMiddleware)
 
-	// Transaction APIs (Task 9.5, 9.7)
-	s.router.HandleFunc("/api/v1/transactions", s.handleSubmitTransaction).Methods("POST")
-	s.router.HandleFunc("/api/v1/transactions/{hash}", s.handleGetTransaction).Methods("GET")
-	s.router.HandleFunc("/api/v1/transactions/pending", s.handleGetPendingTransactions).Methods("GET")
+	// Block APIs - 公开查询接口
+	public.HandleFunc("/blocks/latest", s.handleGetLatestBlock).Methods("GET")
+	public.HandleFunc("/blocks/{height}", s.handleGetBlockByHeight).Methods("GET")
+	public.HandleFunc("/blocks/hash/{hash}", s.handleGetBlockByHash).Methods("GET")
+	public.HandleFunc("/blocks", s.handleGetBlocks).Methods("GET")
 
-	// Platoon APIs (Task 9.8)
-	s.router.HandleFunc("/api/v1/platoons", s.handleGetPlatoons).Methods("GET")
-	s.router.HandleFunc("/api/v1/platoons", s.handleCreatePlatoon).Methods("POST")
-	s.router.HandleFunc("/api/v1/platoons/{id}", s.handleGetPlatoon).Methods("GET")
-	s.router.HandleFunc("/api/v1/platoons/{id}/join", s.handleJoinPlatoon).Methods("POST")
-	s.router.HandleFunc("/api/v1/platoons/{id}/leave", s.handleLeavePlatoon).Methods("POST")
-	s.router.HandleFunc("/api/v1/platoons/{id}/dissolve", s.handleDissolvePlatoon).Methods("POST")
-	s.router.HandleFunc("/api/v1/platoons/{id}/members", s.handleGetPlatoonMembers).Methods("GET")
-	s.router.HandleFunc("/api/v1/platoons/{id}/history", s.handleGetPlatoonHistory).Methods("GET")
+	// Transaction APIs - 查询公开，提交需要认证
+	public.HandleFunc("/transactions/{hash}", s.handleGetTransaction).Methods("GET")
+	public.HandleFunc("/transactions/pending", s.handleGetPendingTransactions).Methods("GET")
 
-	// Identity APIs
-	s.router.HandleFunc("/api/v1/identities/{id}", s.handleGetIdentity).Methods("GET")
-	s.router.HandleFunc("/api/v1/identities", s.handleListIdentities).Methods("GET")
+	// Platoon APIs - 查询公开，操作需要认证
+	public.HandleFunc("/platoons", s.handleGetPlatoons).Methods("GET")
+	public.HandleFunc("/platoons/{id}", s.handleGetPlatoon).Methods("GET")
+	public.HandleFunc("/platoons/{id}/members", s.handleGetPlatoonMembers).Methods("GET")
+	public.HandleFunc("/platoons/{id}/history", s.handleGetPlatoonHistory).Methods("GET")
 
-	// Node status API (Task 9.9)
-	s.router.HandleFunc("/api/v1/node/status", s.handleNodeStatus).Methods("GET")
-	s.router.HandleFunc("/api/v1/node/peers", s.handleNodePeers).Methods("GET")
-	s.router.HandleFunc("/api/v1/node/stats", s.handleNodeStats).Methods("GET")
+	// Identity APIs - 查询公开
+	public.HandleFunc("/identities/{id}", s.handleGetIdentity).Methods("GET")
+	public.HandleFunc("/identities", s.handleListIdentities).Methods("GET")
 
-	// State/History APIs
-	s.router.HandleFunc("/api/v1/state/{entity}/events", s.handleGetStateEvents).Methods("GET")
-	s.router.HandleFunc("/api/v1/state/{entity}/history", s.handleGetStateHistory).Methods("GET")
-	s.router.HandleFunc("/api/v1/audit/logs", s.handleGetAuditLogs).Methods("GET")
+	// Node status API - 公开
+	public.HandleFunc("/node/status", s.handleNodeStatus).Methods("GET")
+	public.HandleFunc("/node/peers", s.handleNodePeers).Methods("GET")
+	public.HandleFunc("/node/stats", s.handleNodeStats).Methods("GET")
 
-	// WebSocket (Task 9.10)
+	// State/History APIs - 公开查询
+	public.HandleFunc("/state/{entity}/events", s.handleGetStateEvents).Methods("GET")
+	public.HandleFunc("/state/{entity}/history", s.handleGetStateHistory).Methods("GET")
+	public.HandleFunc("/audit/logs", s.handleGetAuditLogs).Methods("GET")
+
+	// 受保护 API 路由（需要认证）
+	protected := s.router.PathPrefix("/api/v1").Subrouter()
+	protected.Use(s.authMiddleware)
+
+	// Transaction APIs - 提交交易需要认证
+	protected.HandleFunc("/transactions", s.handleSubmitTransaction).Methods("POST")
+
+	// Platoon APIs - 操作需要认证
+	protected.HandleFunc("/platoons", s.handleCreatePlatoon).Methods("POST")
+	protected.HandleFunc("/platoons/{id}/join", s.handleJoinPlatoon).Methods("POST")
+	protected.HandleFunc("/platoons/{id}/leave", s.handleLeavePlatoon).Methods("POST")
+	protected.HandleFunc("/platoons/{id}/dissolve", s.handleDissolvePlatoon).Methods("POST")
+
+	// WebSocket (Task 9.10) - 可选认证
 	s.router.HandleFunc("/ws", s.handleWebSocket)
 }
 
 // setupMiddleware configures middleware
 func (s *Server) setupMiddleware() {
-	// Logging middleware
-	s.router.Use(s.loggingMiddleware)
-	
-	// Recovery middleware
+	// Recovery middleware（最先执行，捕获 panic）
 	s.router.Use(s.recoveryMiddleware)
 	
 	// CORS middleware
 	s.router.Use(s.corsMiddleware)
+	
+	// Rate limiting middleware
+	s.router.Use(s.rateLimitMiddleware)
+	
+	// Logging middleware（最后执行，记录处理后的状态）
+	s.router.Use(s.loggingMiddleware)
 }
 
 // Start starts the API server
@@ -195,6 +214,11 @@ func (s *Server) Start() error {
 // Stop stops the API server
 func (s *Server) Stop() error {
 	close(s.stopCh)
+	
+	// 停止限流器
+	if s.rateLimiter != nil {
+		s.rateLimiter.Stop()
+	}
 	
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
